@@ -8,6 +8,7 @@
 #include "Luau/FileResolver.h"
 #include "Luau/Frontend.h"
 #include "Luau/Linter.h"
+#include "Luau/LinterConfig.h"
 #include "Luau/Parser.h"
 #include "Luau/TimeTrace.h"
 #include "lua.h"
@@ -292,11 +293,11 @@ struct StrictConfigResolver : Luau::ConfigResolver
         strictConfig.mode = Luau::Mode::Strict;
 
         // `tick` is called by the NB engine, not from source. Luau's
-        // UnusedVariable lint cannot see that and flags every `tick`
+        // FunctionUnused lint cannot see that and flags every `tick`
         // definition as dead code. Disable the lint at the Config level
-        // (typed) instead of filtering strings in the Rust renderer.
-        strictConfig.lintErrors[Luau::LintWarning::Code_UnusedVariable] =
-            Luau::LintError::Disabled;
+        // (typed LintOptions mask) instead of filtering strings in the
+        // Rust renderer.
+        strictConfig.enabledLint.disableWarning(Luau::LintWarning::Code_FunctionUnused);
     }
 
     const Luau::Config& getConfig(const Luau::ModuleName&, const Luau::TypeCheckLimits&) const override
