@@ -15,6 +15,7 @@
 #include <cctype>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -187,6 +188,8 @@ struct GraphFileResolver : Luau::FileResolver
             std::string path(string->value.data, string->value.size);
             if (auto module = resolveNamedModule(path))
                 return module;
+            if (auto module = resolveVirtualRelative(context, path))
+                return module;
             return resolveFilesystemModule(context, std::move(path), limits);
         }
         return std::nullopt;
@@ -207,6 +210,38 @@ private:
     {
         if (virtualSources.find(name) != virtualSources.end() || rootSources.find(name) != rootSources.end())
             return Luau::ModuleInfo{name};
+        return std::nullopt;
+    }
+
+    std::optional<Luau::ModuleInfo> resolveVirtualRelative(
+        const Luau::ModuleInfo* context,
+        const std::string& spec
+    ) const
+    {
+        if (context == nullptr || spec.empty() || spec.front() != '.')
+            return std::nullopt;
+
+        std::filesystem::path base(context->name);
+        base = base.parent_path();
+        std::string normalized = (base / spec).lexically_normal().generic_string();
+
+        // `lexically_normal` usually drops the leading "./", but not always
+        // when the base is empty; strip it defensively.
+        if (normalized.size() >= 2 && normalized[0] == '.' && normalized[1] == '/')
+            normalized = normalized.substr(2);
+
+        const std::string candidates[] = {
+            normalized,
+            normalized + ".luau",
+            normalized + ".lua",
+            normalized + "/init.luau",
+            normalized + "/init.lua",
+        };
+        for (const auto& candidate : candidates)
+        {
+            if (virtualSources.count(candidate) || rootSources.count(candidate))
+                return Luau::ModuleInfo{candidate};
+        }
         return std::nullopt;
     }
 
