@@ -7,6 +7,7 @@
 #include "Luau/FileUtils.h"
 #include "Luau/FileResolver.h"
 #include "Luau/Frontend.h"
+#include "Luau/Linter.h"
 #include "Luau/Parser.h"
 #include "Luau/TimeTrace.h"
 #include "lua.h"
@@ -213,6 +214,11 @@ private:
         return std::nullopt;
     }
 
+    // Resolves `./foo` and `../foo` against the virtual module map instead of
+    // the filesystem. This is what makes cross-module analysis work when
+    // sources were injected from memory (e.g. larvae's `resolved.sources`):
+    // the analyzer sees the same module graph the bundler sees, without
+    // touching disk.
     std::optional<Luau::ModuleInfo> resolveVirtualRelative(
         const Luau::ModuleInfo* context,
         const std::string& spec
@@ -225,8 +231,6 @@ private:
         base = base.parent_path();
         std::string normalized = (base / spec).lexically_normal().generic_string();
 
-        // `lexically_normal` usually drops the leading "./", but not always
-        // when the base is empty; strip it defensively.
         if (normalized.size() >= 2 && normalized[0] == '.' && normalized[1] == '/')
             normalized = normalized.substr(2);
 
@@ -286,6 +290,13 @@ struct StrictConfigResolver : Luau::ConfigResolver
     StrictConfigResolver()
     {
         strictConfig.mode = Luau::Mode::Strict;
+
+        // `tick` is called by the NB engine, not from source. Luau's
+        // UnusedVariable lint cannot see that and flags every `tick`
+        // definition as dead code. Disable the lint at the Config level
+        // (typed) instead of filtering strings in the Rust renderer.
+        strictConfig.lintErrors[Luau::LintWarning::Code_UnusedVariable] =
+            Luau::LintError::Disabled;
     }
 
     const Luau::Config& getConfig(const Luau::ModuleName&, const Luau::TypeCheckLimits&) const override
